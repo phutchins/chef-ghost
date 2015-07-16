@@ -13,6 +13,8 @@ script
     cd <%= @dir %>
 
     # Run the script with Node.js and output to a log
-    export NODE_ENV=production
-    exec /usr/local/bin/npm start <%= @dir %>
+    export NODE_ENV=<%= @node_env %>
+    export NVM_DIR=<%= @nvm_dir %>
+    . $NVM_DIR/nvm.sh
+    npm start >> <%= File.join(@log_dir, 'ghost.log') %> 2>&1
 end script

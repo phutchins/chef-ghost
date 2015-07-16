@@ -1,11 +1,3 @@
-### Setup NodeJS and NPM
-node.set[:nodejs][:version] = "0.10.21"
-node.set[:nodejs][:checksum] = "7c125bf22c1756064f2a68310d4822f77c8134ce178b2faa6155671a8124140d"
-node.set[:nodejs][:checksum_linux_x86] = "c0ed641961a5c5a4602b1316c3d3ed12b3ac330cc18abf3fb980f0b897b5b96b"
-node.set[:nodejs][:checksum_linux_x64] = "2791efef0a1e9a9231b937e55e5b783146e23291bca59a65092f8340eb7c87c8"
-
-include_recipe "nodejs::install_from_binary"
-
 ### Setup User and Install Directory
 include_recipe "ghost::user"
 
@@ -17,8 +9,27 @@ directory node[:ghost][:install_path] do
   action :create
 end
 
+### Setup NodeJS and NPM
+include_recipe 'nvm'
+
+nvm_install "install ghost nvm" do
+  version '0.10.36'
+  user node['ghost']['user']
+  group node['ghost']['user']
+  user_home node['ghost']['home_dir']
+  from_source false
+  alias_as_default true
+  action :create
+end
+
 ### Download and Extract Ghost Archive
 include_recipe "ark"
+
+%w[sqlite3 sqlite3-doc libsqlite3-dev].each do |pkg|
+  package pkg do
+    action :install
+  end
+end
 
 ark 'ghost' do
   url node[:ghost][:src_url]
@@ -40,14 +51,18 @@ bash "unzip_ghost" do
 end
 
 ### Install Dependencies
-bash "install_ghost" do
-  cwd extract_dir 
-  code "npm install --production"
-end
-
-bash "install_mysql_npm" do
+script "install_ghost" do
+  interpreter 'bash'
+  flags '-l'
+  user node['ghost']['user']
+  group node['ghost']['group']
   cwd extract_dir
-  code "npm install mysql" 
+  environment Hash[ 'HOME' => node['ghost']['home_dir'] ]
+  code <<-EOH
+    export NVM_DIR=#{node['ghost']['home_dir'] + '/.nvm'}
+    #{node['nvm']['source']}
+    npm install --production
+  EOH
 end
 
 ### Load Secrets from Databag
@@ -64,15 +79,19 @@ template ::File.join(extract_dir, "config.js") do
   group node[:ghost][:user]
   mode "0660"
   variables(
-    :url		=> node[:ghost][:domain],
+    :url		=> node[:ghost][:url],
     :mail_transport     => node[:ghost][:mail_transport].downcase,
     :mail_user  	=> node[:ghost][:mail_user],
     :mail_password 	=> node[:ghost][:mail_password],
+    :node_env => node[:ghost][:node_env],
+    :db_client => node[:ghost][:db_client],
     :db_host		=> node[:ghost][:db_host],
     :db_user		=> node[:ghost][:db_user],
     :db_password	=> node[:ghost][:db_password],
-    :db_name		=> node[:ghost][:db_name]
+    :db_name		=> node[:ghost][:db_name],
+    :db_sqlite3_path => node[:ghost][:sqlite3][:db_path]
   )
+  action :nothing
 end
 
 ### Install Themes
@@ -88,7 +107,13 @@ bash "set_ownership" do
   code "chown -R #{node[:ghost][:user]}:#{node[:ghost][:user]} #{node[:ghost][:install_path]}"
 end
 
-### Create Service 
+### Create log directory
+directory node['ghost']['log_dir'] do
+  user node['ghost']['user']
+  action :create
+end
+
+### Create Service
 case node[:platform]
 when "ubuntu"
   if node["platform_version"].to_f >= 9.10
@@ -97,7 +122,10 @@ when "ubuntu"
       mode "0644"
       variables(
         :user		=> node[:ghost][:user],
-        :dir		=> extract_dir 
+        :nvm_dir => node['ghost']['home_dir'] + '/.nvm',
+        :node_env => node['ghost']['node_env'],
+        :log_dir => node['ghost']['log_dir'],
+        :dir		=> extract_dir
       )
     end
   end
