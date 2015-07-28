@@ -12,6 +12,9 @@ end
 ### Setup NodeJS and NPM
 include_recipe 'nvm'
 
+### Set up database dependencies if required
+#include_recipe 'ghost::database'
+
 nvm_install "install ghost nvm" do
   version '0.10.36'
   user node['ghost']['user']
@@ -22,32 +25,29 @@ nvm_install "install ghost nvm" do
   action :create
 end
 
-### Download and Extract Ghost Archive
-include_recipe "ark"
-
 %w[sqlite3 sqlite3-doc libsqlite3-dev].each do |pkg|
   package pkg do
     action :install
   end
 end
 
-ark 'ghost' do
-  url node[:ghost][:src_url]
-  path node[:ghost][:install_path]
+remote_file File.join(Chef::Config[:file_cache_path], node[:ghost][:archive_name]) do
+  source node[:ghost][:src_url]
   owner node[:ghost][:user]
-  strip_leading_dir false
-  action :put
+  notifies :run, "script[install_ghost]", :immediately
+  action :create
 end
 
 extract_dir = ::File.join(node[:ghost][:install_path], "ghost")
 
-### Work-around for bug in ark cookbook
 bash "unzip_ghost" do
   cwd Chef::Config[:file_cache_path]
+  user node[:ghost][:user]
   code "unzip -q -u -o #{Chef::Config[:file_cache_path]}/ghost.zip -d #{extract_dir}"
   not_if do
     File.exists?("#{extract_dir}/config.js")
   end
+  notifies :run, 'script[install_ghost]', :immediately
 end
 
 ### Install Dependencies
@@ -63,13 +63,14 @@ script "install_ghost" do
     #{node['nvm']['source']}
     npm install --production
   EOH
+  action :nothing
 end
 
 ### Load Secrets from Databag
 if node[:ghost][:databag]
-  databag = Chef::EncryptedDataBagItem.load(node[:ghost][:databag], node[:ghost][:databag_item])
-  node.set_unless[:ghost][:mail_password] = databag['ghost']['mail_password'] rescue nil
-  node.set_unless[:ghost][:db_password] = databag[:ghost]['db_password'] rescue nil
+  databag = Chef::EncryptedDataBagItem.load(node[:ghost][:databag], node[:ghost][:databag_item], node[:ghost][:databag_secret])
+  node.set_unless[:ghost][:mail_password] = databag['mail_password'] rescue nil
+  node.set_unless[:ghost][:db_password] = databag['db_password'] rescue nil
 end
 
 ### Create Config
@@ -89,17 +90,26 @@ template ::File.join(extract_dir, "config.js") do
     :db_user		=> node[:ghost][:db_user],
     :db_password	=> node[:ghost][:db_password],
     :db_name		=> node[:ghost][:db_name],
-    :db_sqlite3_path => node[:ghost][:sqlite3][:db_path]
+    :db_sqlite3_path => node[:ghost][:sqlite3][:db_path],
+    :storage_location => node[:ghost][:storage][:location],
+    :storage_path => node[:ghost][:storage][:path],
+    :storage_bucket => node[:ghost][:storage][:bucket],
+    :storage_key => node[:ghost][:storage][:key],
+    :storage_secret_access_key => node[:ghost][:storage][:secret_access_key],
+    :storage_region => node[:ghost][:storage][:region],
   )
-  action :nothing
 end
 
 ### Install Themes
 node[:ghost][:themes].each do |name,source_url|
   ghost_theme name do
     source source_url
+    install_path "#{File.join(node['ghost']['install_base'], node['ghost']['domain'], '/ghost/content/themes')}"
   end
 end
+
+### Configure storage
+include_recipe 'ghost::storage'
 
 ### Set File Ownership
 bash "set_ownership" do

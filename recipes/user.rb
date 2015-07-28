@@ -2,8 +2,8 @@ require 'digest/sha2'
 ::Chef::Recipe.send(:include, Opscode::OpenSSL::Password)
 
 if node[:ghost][:databag]
-  databag = Chef::EncryptedDataBagItem.load(node[:ghost][:databag], node[:ghost][:databag_item])
-  node.set_unless[:ghost][:password] = databag['ghost']['password'] rescue nil
+  databag = Chef::EncryptedDataBagItem.load(node[:ghost][:databag], node[:ghost][:databag_item], node[:ghost][:databag_secret])
+  node.set_unless[:ghost][:password] = databag['password'] rescue nil
 else
   node.set_unless[:ghost][:password] = secure_password
 end

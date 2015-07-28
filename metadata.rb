@@ -5,6 +5,6 @@ license          'Apache 2.0'
 description      'Installs/Configures Ghost CMS'
 version          '0.0.4'
 
-%w{ ark database firewall git sqlite nginx nvm }.each do |cb|
+%w{ database firewall git sqlite nginx nvm }.each do |cb|
   depends cb
 end

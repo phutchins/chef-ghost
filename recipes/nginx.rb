@@ -1,14 +1,11 @@
 node.set_unless[:nginx][:repo_source] = "nginx"
 node.set_unless[:nginx][:default_site_enabled] = false
 
-include_recipe "nginx::repo"
-include_recipe "nginx"
-
 begin
-  databag = Chef::EncryptedDataBagItem.load(node[:ghost][:databag], node[:ghost][:databag_item])
-  node.set[:ghost][:ssl_cert] = databag['ghost']['ssl_cert'] rescue node[:ghost][:ssl_cert]
-  node.set[:ghost][:ssl_key] = databag['ghost']['ssl_key'] rescue node[:ghost][:ssl_key]
-  node.set[:ghost][:ssl_cacert] = databag['ghost']['ssl_cacert'] rescue node[:ghost][:ssl_cacert]
+  databag = Chef::EncryptedDataBagItem.load(node[:ghost][:databag], node[:ghost][:databag_item], node[:ghost][:databag_secret])
+  node.set[:ghost][:ssl_cert] = databag['ssl_cert'] rescue node[:ghost][:ssl_cert]
+  node.set[:ghost][:ssl_key] = databag['ssl_key'] rescue node[:ghost][:ssl_key]
+  node.set[:ghost][:ssl_cacert] = databag['ssl_cacert'] rescue node[:ghost][:ssl_cacert]
 rescue
   nil
 end
@@ -39,10 +36,14 @@ if node[:ghost][:ssl_cert] and node[:ghost][:ssl_key]
   end
 end
 
+include_recipe "nginx::repo"
+include_recipe "nginx"
+
 template "/etc/nginx/sites-available/ghost" do
   source "nginx-site.erb"
   variables(
-    :dir     => ::File.join(node[:ghost][:install_path], "ghost")
+    :dir     => ::File.join(node[:ghost][:install_path], "ghost"),
+    :additional_config => node[:ghost][:nginx][:additional_config]
   )
   notifies :restart, "service[nginx]"
 end

@@ -11,6 +11,7 @@ action :install do
       directory new_resource.install_path do
         owner node[:ghost][:user]
         group node[:ghost][:user]
+        recursive true
         mode "0755"
         action :create
       end
